@@ -1,4 +1,75 @@
 library(dplyr)
+library(tidyverse)
+
+# Set working directory to rental model location and source functions
+rental_model_path <- "C:/Users/mayay/.vscode/Rentcost"
+current_wd <- getwd()
+setwd(rental_model_path)
+source("data_compiling.r")
+source("calculations.r")
+setwd(current_wd)  # Return to original directory
+
+# Configuration Constants
+MONTHS_PER_SEMESTER <- 4
+MONTHS_PER_YEAR_NO_SUMMER <- 8  # Fall + Spring semesters
+MONTHS_PER_YEAR_WITH_SUMMER <- 12  # Fall + Spring + Summer
+LOAN_TERM_MONTHS <- 120
+SUBSIDIZED_RATE <- 0.0505
+UNSUBSIDIZED_RATE <- 0.0505
+DEFAULT_YEARS_IN_SCHOOL <- 3
+SUMMER_HOUSING_FOOD_MULTIPLIER <- 0.5
+
+# Student house cost calculation using rental model
+#' Calculate realistic house costs for students using rental market data
+#' @param property_value Property value in dollars (default DC median)
+#' @param num_roommates Number of roommates to split rental income (0-3)
+#' @param semester_length Length of semester in months
+#' @return List with semester cost, down payment, and monthly breakdown
+student_house_cost <- function(property_value = 400000, num_roommates = 2, semester_length = MONTHS_PER_SEMESTER) {
+    county <- "District Of Columbia County"
+    state <- "District Of Columbia"
+    
+    # Calculate monthly housing costs
+    monthly_mortgage <- mortgage(county, state, 30, property_value)
+    monthly_expenses_cost <- monthly_expenses(county, state, property_value)
+    
+    # Calculate potential rental income (based on roommates)
+    # Using rental model's market data for full rental potential
+    full_rental_income <- monthly_income(county, state)
+    
+    # Adjust rental income based on number of roommates
+    # Assume student occupies 1 room, rents out others
+    rooms_available <- 3  # Typical house has 3-4 bedrooms
+    rental_income <- full_rental_income * (num_roommates / rooms_available)
+    
+    # Net monthly cost to student
+    net_monthly <- monthly_mortgage + monthly_expenses_cost - rental_income
+    
+    # Convert to semester cost
+    semester_cost <- net_monthly * semester_length
+    
+    # Calculate required down payment and closing costs
+    down_payment_required <- property_value * down_payment  # Using rental model's down_payment variable
+    closing_costs <- property_value * 0.03  # Typical 3% closing costs
+    total_upfront <- down_payment_required + closing_costs
+    
+    return(list(
+        semester_cost = semester_cost,
+        down_payment_required = down_payment_required,
+        closing_costs = closing_costs,
+        total_upfront = total_upfront,
+        monthly_breakdown = list(
+            mortgage = monthly_mortgage,
+            expenses = monthly_expenses_cost,
+            rental_income = rental_income,
+            net_monthly = net_monthly
+        ),
+        property_details = list(
+            property_value = property_value,
+            num_roommates = num_roommates
+        )
+    ))
+}
 
 student_bill <- data.frame(
   type = c(
@@ -16,10 +87,17 @@ student_bill <- data.frame(
 
 semester_cost <- sum(student_bill$sem_cost)
 semester_cost_noinsurance <- sum(student_bill$sem_cost[-6])
+semester_cost_web <- 
+
+# Calculate realistic house costs using rental model
+house_solo_cost <- student_house_cost(property_value = 400000, num_roommates = 0)
+house_with_roommates_cost <- student_house_cost(property_value = 400000, num_roommates = 2)
 
 housing <- data.frame(
-    type = c("student", "apartment", "house"),
-    sem_cost = c(7100, 8000, -2400)
+    type = c("student", "apartment", "house_solo", "house_with_roommates"),
+    sem_cost = c(7100, 8000, 
+                house_solo_cost$semester_cost,
+                house_with_roommates_cost$semester_cost)
 )
 
 food <- data.frame(
@@ -32,18 +110,48 @@ aid <- data.frame(
     sem_cost = c(3700,0,1750,3000,29500)
 )
 
+# Helper function to get house cost breakdown
+get_house_breakdown <- function(house_type = "house_with_roommates") {
+    if (house_type == "house_solo") {
+        return(house_solo_cost)
+    } else if (house_type == "house_with_roommates") {
+        return(house_with_roommates_cost)
+    } else {
+        stop("Invalid house type. Use 'house_solo' or 'house_with_roommates'")
+    }
+}
+
+# Helper function to display house costs
+display_house_costs <- function() {
+    cat("=== HOUSE COST BREAKDOWN ===\n")
+    cat("\nHouse Solo (No Roommates):\n")
+    cat("  Semester Cost: $", format(house_solo_cost$semester_cost, big.mark=","), "\n")
+    cat("  Monthly Cost: $", format(house_solo_cost$monthly_breakdown$net_monthly, big.mark=","), "\n")
+    cat("  Down Payment: $", format(house_solo_cost$down_payment_required, big.mark=","), "\n")
+    cat("  Total Upfront: $", format(house_solo_cost$total_upfront, big.mark=","), "\n")
+    
+    cat("\nHouse with 2 Roommates:\n")
+    cat("  Semester Cost: $", format(house_with_roommates_cost$semester_cost, big.mark=","), "\n")
+    cat("  Monthly Cost: $", format(house_with_roommates_cost$monthly_breakdown$net_monthly, big.mark=","), "\n")
+    cat("  Rental Income: $", format(house_with_roommates_cost$monthly_breakdown$rental_income, big.mark=","), "/month\n")
+    cat("  Down Payment: $", format(house_with_roommates_cost$down_payment_required, big.mark=","), "\n")
+    cat("  Total Upfront: $", format(house_with_roommates_cost$total_upfront, big.mark=","), "\n")
+    
+    cat("\nComparison to Alternatives:\n")
+    cat("  Student Housing: $7,100/semester\n")
+    cat("  Apartment: $8,000/semester\n")
+}
+
 all_data <- list(housing, food, aid, student_bill)
 
-monthly <- function(x) {
+monthly <- function(x, months_divisor = MONTHS_PER_SEMESTER) {
     for (df in all_data) {
         if (x %in% df$type) {
-            monthly <- df$sem_cost[df$type == x]
-            monthly <- monthly/4
-            return(monthly)
+            monthly_cost <- df$sem_cost[df$type == x]
+            return(monthly_cost / months_divisor)
         }
     }
-    monthly <- x/4
-    return(monthly)
+    return(x / months_divisor)
 }
 
 yearly <- function(x) {
@@ -51,9 +159,10 @@ yearly <- function(x) {
     return(yearly)
 }
 
-summer <- function(y) {
-    summer <- y*2330
-    return(summer)
+# Calculate summer tuition cost
+summer <- function(credits) {
+    SUMMER_COST_PER_CREDIT <- 2330  # Keep existing rate as constant
+    return(credits * SUMMER_COST_PER_CREDIT)
 }
 
 #all aid
@@ -122,9 +231,21 @@ catchemall <- function() {
     })
 }
 
-loan_interest <- function(aid_plan_name, years_in_school = 3) {
-    sub_rate <- 0.0505 
-    unsub_rate <- 0.0505 
+#' Calculate loan payments and interest over repayment period
+#' @param aid_plan_name Character string matching aid plan names
+#' @param years_in_school Number of years loans accrue interest (default 3)
+#' @return List with monthly_payment, total_interest, post_school_debt
+loan_interest <- function(aid_plan_name, years_in_school = DEFAULT_YEARS_IN_SCHOOL) {
+    # Input validation
+    if (!is.character(aid_plan_name) || length(aid_plan_name) != 1) {
+        stop("aid_plan_name must be a single character string")
+    }
+    if (!is.numeric(years_in_school) || years_in_school <= 0) {
+        stop("years_in_school must be a positive number")
+    }
+    
+    sub_rate <- SUBSIDIZED_RATE
+    unsub_rate <- UNSUBSIDIZED_RATE 
     
     subsidized_per_sem <- 0
     unsubsidized_per_sem <- 0
@@ -134,8 +255,9 @@ loan_interest <- function(aid_plan_name, years_in_school = 3) {
     }
     if (aid_plan_name %in% c("Loans Only", "All Aid")) {
         unsubsidized_per_sem <- aid$sem_cost[4]
+        subsidized_per_sem <- aid$sem_cost[3]
     }
-    
+
     subsidized_total <- subsidized_per_sem * 6
     unsubsidized_total <- unsubsidized_per_sem * 6
     
@@ -144,7 +266,7 @@ loan_interest <- function(aid_plan_name, years_in_school = 3) {
     total_debt <- 0
     
     if (subsidized_total > 0) {
-        n <- 120
+        n <- LOAN_TERM_MONTHS
         r <- sub_rate / 12
         monthly_payment <- monthly_payment + (subsidized_total * r * (1 + r)^n) / ((1 + r)^n - 1)
         sub_total_paid <- monthly_payment * n
@@ -155,7 +277,7 @@ loan_interest <- function(aid_plan_name, years_in_school = 3) {
     
     if (unsubsidized_total > 0) {
         principal_at_grad <- unsubsidized_total * (1 + unsub_rate)^years_in_school
-        n <- 120
+        n <- LOAN_TERM_MONTHS
         r <- unsub_rate / 12
         unsub_monthly <- (principal_at_grad * r * (1 + r)^n) / ((1 + r)^n - 1)
         monthly_payment <- monthly_payment + unsub_monthly
@@ -204,21 +326,30 @@ run_simulation <- function(include_summer = TRUE) {
                 for (summer_credits in credit_options) {
                     if (summer_credits > 0) {
                         summer_tuition <- summer(summer_credits)
-                        summer_housing_food <- (h_cost + f_cost) * 0.5
+                        summer_housing_food <- (h_cost + f_cost) * SUMMER_HOUSING_FOOD_MULTIPLIER
                         summer_cost_total <- summer_tuition + summer_housing_food
                         total_year <- total_year_no_summer + summer_cost_total
-                        total_month <- total_year / 12
+                        total_month <- total_year / MONTHS_PER_YEAR_WITH_SUMMER
                         summer_included <- TRUE
                     } else {
                         total_year <- total_year_no_summer
-                        total_month <- total_year / 8
+                        total_month <- total_year / MONTHS_PER_YEAR_NO_SUMMER
                         summer_included <- FALSE
+                    }
+                    
+                    # Calculate down payment cost if house option
+                    down_payment_cost <- 0
+                    if (h == "house_solo") {
+                        down_payment_cost <- house_solo_cost$total_upfront
+                    } else if (h == "house_with_roommates") {
+                        down_payment_cost <- house_with_roommates_cost$total_upfront
                     }
                     
                     row <- data.frame(
                         student = (h == "student"),
                         apartment = (h == "apartment"),
-                        house = (h == "house"),
+                        house_solo = (h == "house_solo"),
+                        house_with_roommates = (h == "house_with_roommates"),
                         all_access = (f == "all_access"),
                         block90 = (f == "block90"),
                         block120 = (f == "block120"),
@@ -239,6 +370,8 @@ run_simulation <- function(include_summer = TRUE) {
                         cost_per_year = total_year,
                         cost_per_month = total_month,
                         total_3_years = total_year * 3,
+                        down_payment_required = down_payment_cost,
+                        total_cash_needed = total_year * 3 + down_payment_cost,
                         post_school_debt = loan_info$post_school_debt,
                         post_schooling_monthly = loan_info$monthly_payment,
                         post_schooling_total_interest = loan_info$total_interest
@@ -256,6 +389,29 @@ run_simulation <- function(include_summer = TRUE) {
 
 results_df <- run_simulation()
 
+#' Apply multiple filters to a dataframe
+#' @param df Input dataframe
+#' @param exclude_cols Vector of column names to filter out (set to FALSE)
+#' @param remove_cols Vector of column names to remove from result
+#' @return Filtered dataframe
+apply_standard_filters <- function(df, exclude_cols = c(), remove_cols = c()) {
+    result <- df
+    
+    # Apply exclusion filters
+    for (col in exclude_cols) {
+        if (col %in% names(result)) {
+            result <- result %>% filter(!get(col))
+        }
+    }
+    
+    # Remove specified columns
+    cols_to_remove <- intersect(remove_cols, names(result))
+    if (length(cols_to_remove) > 0) {
+        result <- result %>% select(-all_of(cols_to_remove))
+    }
+    
+    return(result)
+}
 
 filtered_possibilities <- results_df %>%
   filter(!(institutional_grant | all_aid)) %>%
@@ -267,14 +423,22 @@ f2iltered_possibilities <- filtered_possibilities %>%
 
 filter_likely <- f2iltered_possibilities %>%
     filter(!loans_only) %>%
-    filter(!summer_credits > 6) %>%
+    filter(summer_credits <= 6) %>%
     filter(!block120) %>%
-    filter(!cost_per_year > 62000) %>%
+    filter(cost_per_year <= 80000) %>%
     select(-block120, -loans_only)
 
 fl.likely.noloan <- filter_likely %>%
     filter(!subsidized_only) %>%
     filter(!grants_subsidized) %>%
     filter(!all_access) %>%
-    filter(summer_credits == 4 | summer_credits == 0) %>%
+    filter(summer_credits %in% c(0, 4)) %>%
     select(-subsidized_only, -grants_subsidized, -all_access)
+
+filter_likely_no_house <- filter_likely %>%
+    filter(!house_solo & !house_with_roommates) %>%
+    select(-house_solo, -house_with_roommates)
+
+fl.likely.noloan.nohouse <- fl.likely.noloan %>%
+    filter(!house_solo & !house_with_roommates) %>%
+    select(-house_solo, -house_with_roommates)
