@@ -437,6 +437,7 @@ fl.likely.noloan <- filter_likely %>%
 
 filter_likely_no_house <- filter_likely %>%
     filter(!house_solo & !house_with_roommates) %>%
+    filter(summer_credits %in% c(0, 4)) %>%
     select(-house_solo, -house_with_roommates)
 
 fl.likely.noloan.nohouse <- fl.likely.noloan %>%
