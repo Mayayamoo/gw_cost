@@ -431,11 +431,11 @@ apply_standard_filters <- function(df, exclude_cols = c(), remove_cols = c()) {
     return(result)
 }
 
-filtered_possibilities <- results_df %>%
+filtered.possibilities <- results_df %>%
   filter(!(institutional_grant | all_aid | no_aid)) %>%
   select(-all_aid, -institutional_grant, -no_aid)
 
-filter_likely <- filtered_possibilities %>%
+filter.likely <- filtered.possibilities %>%
     filter(!loans_only) %>%
     filter(!block120) %>%
     filter(!all_access) %>%
@@ -443,15 +443,23 @@ filter_likely <- filtered_possibilities %>%
     filter(summer_credits %in% c(0, 4)) %>%
     select(-block120, -loans_only, -all_access)
 
-fl.likely.noloan <- filter_likely %>%
+fl.likely.noloan <- filter.likely %>%
     filter(!subsidized_only) %>%
     filter(!grants_subsidized) %>%
     select(-subsidized_only, -grants_subsidized)
 
-filter_likely_no_house <- filter_likely %>%
+filter.likely.nohouse <- filter.likely %>%
     filter(!house_solo & !house_with_roommates) %>%
     select(-house_solo, -house_with_roommates)
 
 fl.likely.noloan.nohouse <- fl.likely.noloan %>%
     filter(!house_solo & !house_with_roommates) %>%
     select(-house_solo, -house_with_roommates)
+
+nosummer.likely.noloan.nohouse <- fl.likely.noloan.nohouse %>%
+    filter(!(summer_classes | summer_credits)) %>%
+    select(-summer_classes, -summer_credits)
+
+nosummer.likely.nohouse <- filter.likely.nohouse %>%
+    filter(!(summer_classes | summer_credits)) %>%
+    select(-summer_classes, -summer_credits)    
