@@ -71,56 +71,6 @@ student_house_cost <- function(property_value = 400000, num_roommates = 2, semes
     ))
 }
 
-student_bill <- data.frame(
-  type = c(
-    "student_gov_fee",
-    "tuition", 
-    "transit",
-    "student_activities_fee",
-    "matriculation_fee",
-    "health_insurance"
-    ),
-  code = c("ESA", "T110", "UPAS", "ESTA", "EMAT", "SHIN"),
-  sem_cost = c(21.00, 16310.00, 100.00, 50.00, 350.00, 1273.00),
-  stringsAsFactors = FALSE
-)
-
-semester_cost <- sum(student_bill$sem_cost)
-semester_cost_noinsurance <- sum(student_bill$sem_cost[-6])
-semester_cost_web <- 
-
-# Calculate realistic house costs using rental model
-house_solo_cost <- student_house_cost(property_value = 400000, num_roommates = 0)
-house_with_roommates_cost <- student_house_cost(property_value = 400000, num_roommates = 2)
-
-housing <- data.frame(
-    type = c("student", "apartment", "house_solo", "house_with_roommates"),
-    sem_cost = c(7100, 8000, 
-                house_solo_cost$semester_cost,
-                house_with_roommates_cost$semester_cost)
-)
-
-food <- data.frame(
-  type = c("all_access", "block90", "block120", "commuter50", "commuter25", "hellofresh"),
-  sem_cost = c(3150.00, 2345.00, 2545.00, 950.00, 475.00, 1600.00)
-)
-
-aid <- data.frame(
-    type = c("grant","scholarship","subsidized","unsubsidized", "institutional"),
-    sem_cost = c(3700,0,1750,3000,29500)
-)
-
-# Helper function to get house cost breakdown
-get_house_breakdown <- function(house_type = "house_with_roommates") {
-    if (house_type == "house_solo") {
-        return(house_solo_cost)
-    } else if (house_type == "house_with_roommates") {
-        return(house_with_roommates_cost)
-    } else {
-        stop("Invalid house type. Use 'house_solo' or 'house_with_roommates'")
-    }
-}
-
 # Helper function to display house costs
 display_house_costs <- function() {
     cat("=== HOUSE COST BREAKDOWN ===\n")
@@ -140,6 +90,56 @@ display_house_costs <- function() {
     cat("\nComparison to Alternatives:\n")
     cat("  Student Housing: $7,100/semester\n")
     cat("  Apartment: $8,000/semester\n")
+}
+
+student_bill <- data.frame(
+  type = c(
+    "student_gov_fee",
+    "tuition_bill", 
+    "transit",
+    "student_activities_fee",
+    "matriculation_fee",
+    "health_insurance",
+    "tution_online"
+    ),
+  sem_cost = c(21.00, 16310.00, 100.00, 50.00, 350.00, 1273.00, 34800),
+  stringsAsFactors = FALSE
+)
+
+semester_cost <- sum(student_bill$sem_cost)
+semester_cost_noinsurance <- sum(student_bill$sem_cost[-c(6,7)])
+semester_cost_web <- sum(student_bill$sem_cost[-c(2,6)])
+
+# Calculate realistic house costs using rental model
+house_solo_cost <- student_house_cost(property_value = 400000, num_roommates = 0)
+house_with_roommates_cost <- student_house_cost(property_value = 400000, num_roommates = 2)
+
+housing <- data.frame(
+    type = c("student_shared", "student", "student_2", "apartment", "apartment_roommate", "house_solo", "house_with_roommates"),
+    sem_cost = c(6910, 7350, 8280, 8800, 7800,
+                house_solo_cost$semester_cost,
+                house_with_roommates_cost$semester_cost)
+)
+
+food <- data.frame(
+  type = c("all_access", "block90", "block120", "commuter50", "commuter25", "hellofresh"),
+  sem_cost = c(3150.00, 2345.00, 2545.00, 950.00, 475.00, 1600.00)
+)
+
+aid <- data.frame(
+    type = c("grant","scholarship","subsidized","unsubsidized", "institutional"),
+    sem_cost = c(3697.5,0,1750,3000,29500)
+)
+
+# Helper function to get house cost breakdown
+get_house_breakdown <- function(house_type = "house_with_roommates") {
+    if (house_type == "house_solo") {
+        return(house_solo_cost)
+    } else if (house_type == "house_with_roommates") {
+        return(house_with_roommates_cost)
+    } else {
+        stop("Invalid house type. Use 'house_solo' or 'house_with_roommates'")
+    }
 }
 
 all_data <- list(housing, food, aid, student_bill)
@@ -297,13 +297,26 @@ loan_interest <- function(aid_plan_name, years_in_school = DEFAULT_YEARS_IN_SCHO
 run_simulation <- function(include_summer = TRUE) {
     results <- data.frame()
     
+    # Add combo food options
+    food_types <- c(food$type, "commuter50+hellofresh", "commuter25+hellofresh")
+    
     for (h in housing$type) {
-        for (f in food$type) {
-            if ((f %in% c("commuter50", "commuter25")) && h == "student") {
+        for (f in food_types) {
+            # Skip invalid combos for single food options
+            if ((f %in% c("commuter50", "commuter25", "commuter50+hellofresh", "hellofresh", "commuter25+hellofresh")) && h %in% c("student", "student_2", "student_shared")) {
                 next
             }
+            
+            # Calculate food cost for combos
+            if (f == "commuter50+hellofresh") {
+                f_cost <- food$sem_cost[food$type == "commuter50"] + food$sem_cost[food$type == "hellofresh"]
+            } else if (f == "commuter25+hellofresh") {
+                f_cost <- food$sem_cost[food$type == "commuter25"] + food$sem_cost[food$type == "hellofresh"]
+            } else {
+                f_cost <- food$sem_cost[food$type == f]
+            }
+            
             h_cost <- housing$sem_cost[housing$type == h]
-            f_cost <- food$sem_cost[food$type == f]
 
             all_aid_plans <- c(list("No Aid" = function() 0), aid_plans)
             
@@ -345,8 +358,12 @@ run_simulation <- function(include_summer = TRUE) {
                         down_payment_cost <- house_with_roommates_cost$total_upfront
                     }
                     
+                    # Add new columns for combo food options
                     row <- data.frame(
-                        student = (h == "student"),
+                        student_studio = (h == "student_shared"),
+                        student_solo_low = (h == "student"),
+                        student_solo_high = (h == "student_2"),
+                        apartment_roommate = (h == "apartment_roommate"),
                         apartment = (h == "apartment"),
                         house_solo = (h == "house_solo"),
                         house_with_roommates = (h == "house_with_roommates"),
@@ -356,6 +373,8 @@ run_simulation <- function(include_summer = TRUE) {
                         commuter50 = (f == "commuter50"),
                         commuter25 = (f == "commuter25"),
                         hellofresh = (f == "hellofresh"),
+                        commuter50_hellofresh = (f == "commuter50+hellofresh"),
+                        commuter25_hellofresh = (f == "commuter25+hellofresh"),
                         no_aid = (aid_name == "No Aid"),
                         grants_only = (aid_name == "Grants Only"),
                         subsidized_only = (aid_name == "Subsidized Loan Only"),
@@ -413,33 +432,35 @@ apply_standard_filters <- function(df, exclude_cols = c(), remove_cols = c()) {
     return(result)
 }
 
-filtered_possibilities <- results_df %>%
-  filter(!(institutional_grant | all_aid)) %>%
-  select(-all_aid, -institutional_grant)
+filtered.possibilities <- results_df %>%
+  filter(!(institutional_grant | all_aid | no_aid)) %>%
+  select(-all_aid, -institutional_grant, -no_aid)
 
-f2iltered_possibilities <- filtered_possibilities %>%
-    filter(!no_aid) %>%
-    select(-no_aid)
-
-filter_likely <- f2iltered_possibilities %>%
+filter.likely <- filtered.possibilities %>%
     filter(!loans_only) %>%
-    filter(summer_credits <= 6) %>%
     filter(!block120) %>%
+    filter(!all_access) %>%
     filter(cost_per_year <= 80000) %>%
-    select(-block120, -loans_only)
+    filter(summer_credits %in% c(0, 4)) %>%
+    select(-block120, -loans_only, -all_access)
 
-fl.likely.noloan <- filter_likely %>%
+fl.likely.noloan <- filter.likely %>%
     filter(!subsidized_only) %>%
     filter(!grants_subsidized) %>%
-    filter(!all_access) %>%
-    filter(summer_credits %in% c(0, 4)) %>%
-    select(-subsidized_only, -grants_subsidized, -all_access)
+    select(-subsidized_only, -grants_subsidized)
 
-filter_likely_no_house <- filter_likely %>%
+filter.likely.nohouse <- filter.likely %>%
     filter(!house_solo & !house_with_roommates) %>%
-    filter(summer_credits %in% c(0, 4)) %>%
     select(-house_solo, -house_with_roommates)
 
 fl.likely.noloan.nohouse <- fl.likely.noloan %>%
     filter(!house_solo & !house_with_roommates) %>%
     select(-house_solo, -house_with_roommates)
+
+nosummer.likely.noloan.nohouse <- fl.likely.noloan.nohouse %>%
+    filter(!(summer_classes | summer_credits)) %>%
+    select(-summer_classes, -summer_credits)
+
+nosummer.likely.nohouse <- filter.likely.nohouse %>%
+    filter(!(summer_classes | summer_credits)) %>%
+    select(-summer_classes, -summer_credits)    
